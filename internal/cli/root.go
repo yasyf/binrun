@@ -5,14 +5,17 @@
 // where the kernel passes the descriptor as the first argument) resolves the
 // descriptor and execs the pinned artifact, forwarding args untouched — cobra
 // never sees them, so an artifact's own flags are not interpreted. "binrun --
-// VERB …" runs a management verb (fetch, resolve, parse, latest, gc, cache-dir),
-// and binrun's own --version/--help, under the cobra tree.
+// VERB …" runs a management verb (fetch, resolve, parse, latest, gc, cache-dir)
+// under the cobra tree.
 //
-// A leading "--" is the only thing that selects the verb tree; every other first
-// argument is a descriptor path, even one starting with "-" (dotslash's rule:
-// descriptors are invoked by real paths, so a flag-shaped first argument is a
-// path, not a binrun flag). Invoking binrun with no argument is a usage error,
-// so a wrapper that resolves an empty descriptor fails loud instead of silently
+// Only four leading-dash strings mean "the runner": a first argument of exactly
+// --version, -v, --help, or -h prints binrun's own version or help. A first
+// argument of exactly "--" selects the verb tree. Every other first argument is
+// a descriptor path — even one starting with "-", which is stat-checked so a
+// flag-shaped typo fails with guidance rather than misparsing (dotslash's rule:
+// descriptors are invoked by real paths, and ./--version disambiguates the rare
+// descriptor named like a flag). No argument at all is a usage error, so a
+// wrapper that resolves an empty descriptor fails loud instead of silently
 // succeeding.
 package cli
 
@@ -26,6 +29,15 @@ import (
 )
 
 var errNoDescriptor = errors.New("no descriptor given; usage: binrun FILE [args…] (verbs: binrun -- VERB)")
+
+// metaFlags are the only leading-dash first arguments that address the runner
+// itself; each maps to its canonical cobra flag.
+var metaFlags = map[string]string{
+	"--version": "--version",
+	"-v":        "--version",
+	"--help":    "--help",
+	"-h":        "--help",
+}
 
 type mode int
 
@@ -41,9 +53,10 @@ type route struct {
 	args       []string
 }
 
-// classify decides how to dispatch args: a leading "--" selects the verb tree,
-// any other first argument is a descriptor path (even one starting with "-"),
-// and no arguments at all is a usage error.
+// classify decides how to dispatch args: a first argument that is exactly a
+// runner meta-flag (--version/-v/--help/-h) or exactly "--" reaches the cobra
+// tree; any other first argument is a descriptor path (even one starting with
+// "-"); and no arguments at all is a usage error.
 func classify(args []string) route {
 	switch {
 	case len(args) == 0:
@@ -51,6 +64,9 @@ func classify(args []string) route {
 	case args[0] == "--":
 		return route{mode: modeVerbs, args: args[1:]}
 	default:
+		if canonical, ok := metaFlags[args[0]]; ok {
+			return route{mode: modeVerbs, args: []string{canonical}}
+		}
 		return route{mode: modeExec, descriptor: args[0], args: args[1:]}
 	}
 }

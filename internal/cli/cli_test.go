@@ -31,8 +31,11 @@ func TestClassify(t *testing.T) {
 		{"descriptor with args", []string{"app.binrun", "a", "b"}, route{mode: modeExec, descriptor: "app.binrun", args: []string{"a", "b"}}},
 		{"shebang absolute path", []string{"/opt/app.binrun"}, route{mode: modeExec, descriptor: "/opt/app.binrun"}},
 		{"double dash selects verbs", []string{"--", "fetch", "f"}, route{mode: modeVerbs, args: []string{"fetch", "f"}}},
+		{"version flag is runner meta", []string{"--version"}, route{mode: modeVerbs, args: []string{"--version"}}},
+		{"short version flag normalizes", []string{"-v"}, route{mode: modeVerbs, args: []string{"--version"}}},
+		{"help flag is runner meta", []string{"--help"}, route{mode: modeVerbs, args: []string{"--help"}}},
+		{"short help flag normalizes", []string{"-h"}, route{mode: modeVerbs, args: []string{"--help"}}},
 		{"leading-dash path is a descriptor", []string{"-weird.binrun"}, route{mode: modeExec, descriptor: "-weird.binrun"}},
-		{"flag-shaped arg is a descriptor path", []string{"-v"}, route{mode: modeExec, descriptor: "-v"}},
 		{"no args is a usage error", nil, route{mode: modeUsage}},
 	}
 	for _, tt := range tests {
@@ -159,6 +162,39 @@ func TestExecRetriesOnPrunedEntry(t *testing.T) {
 	if lastPath != target {
 		t.Errorf("retried exec path = %q, want %q", lastPath, target)
 	}
+}
+
+func TestExecLeadingDashPath(t *testing.T) {
+	t.Run("existing leading-dash path execs", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		script := []byte("#!/bin/sh\nexit 0\n")
+		populateCache(t, home, script, "runme")
+		dir := t.TempDir()
+		descName := "-lead.binrun"
+		if err := os.WriteFile(filepath.Join(dir, descName), []byte(releaseDescriptorJSON(t, digestOf(script), int64(len(script)), "runme")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(dir)
+
+		orig := execProcess
+		t.Cleanup(func() { execProcess = orig })
+		var called bool
+		execProcess = func(string, []string, []string) error { called = true; return nil }
+		if err := execDescriptor(context.Background(), descName, nil); err != nil {
+			t.Fatalf("execDescriptor(%q): %v", descName, err)
+		}
+		if !called {
+			t.Error("expected exec of an existing leading-dash descriptor")
+		}
+	})
+
+	t.Run("absent leading-dash path errors with guidance", func(t *testing.T) {
+		err := execDescriptor(context.Background(), "-nope.binrun", nil)
+		if err == nil || !strings.Contains(err.Error(), "is not a descriptor file") {
+			t.Errorf("err = %v, want a guidance error", err)
+		}
+	})
 }
 
 func TestToPrune(t *testing.T) {

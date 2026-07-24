@@ -190,6 +190,56 @@ func TestNoDescriptorIsUsageError(t *testing.T) {
 	}
 }
 
+// TestMetaFlagsPrintRunnerInfo proves the conventional bare flags reach the
+// runner (not a descriptor named like a flag): --version/-v and --help/-h print
+// the same thing as their "-- <flag>" verb-tree form, on stdout, exit 0.
+func TestMetaFlagsPrintRunnerInfo(t *testing.T) {
+	home := t.TempDir()
+
+	versionOut, _, code := runBinrunCapture(t, home, "--", "--version")
+	if code != 0 {
+		t.Fatalf("`-- --version` exit = %d, want 0", code)
+	}
+	for _, flag := range []string{"--version", "-v"} {
+		stdout, stderr, code := runBinrunCapture(t, home, flag)
+		if code != 0 {
+			t.Errorf("%s exit = %d, want 0 (stderr: %s)", flag, code, stderr)
+		}
+		if stdout != versionOut {
+			t.Errorf("%s stdout = %q, want %q (same as `-- --version`)", flag, stdout, versionOut)
+		}
+		if stderr != "" {
+			t.Errorf("%s stderr = %q, want empty", flag, stderr)
+		}
+	}
+
+	helpOut, _, code := runBinrunCapture(t, home, "--", "--help")
+	if code != 0 {
+		t.Fatalf("`-- --help` exit = %d, want 0", code)
+	}
+	for _, flag := range []string{"--help", "-h"} {
+		stdout, _, code := runBinrunCapture(t, home, flag)
+		if code != 0 {
+			t.Errorf("%s exit = %d, want 0", flag, code)
+		}
+		if stdout != helpOut {
+			t.Errorf("%s stdout = %q, want the help text (same as `-- --help`)", flag, stdout)
+		}
+	}
+}
+
+// TestLeadingDashAbsentPathExitsOne proves a flag-shaped first argument that is
+// not a meta-flag and not an existing file exits 1 with guidance, end to end.
+func TestLeadingDashAbsentPathExitsOne(t *testing.T) {
+	_, stderr, code := runBinrunCapture(t, t.TempDir(), "-nope.binrun")
+	if code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "is not a descriptor file") {
+		t.Errorf("stderr = %q, want guidance", stderr)
+	}
+}
+
 func runBinrunCapture(t *testing.T, home string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	return runBinrunEnvCapture(t, []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, args...)
