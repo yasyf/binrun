@@ -32,7 +32,9 @@ func newGCCmd() *cobra.Command {
 				if err := store.RemoveCacheEntry(entry); err != nil {
 					return err
 				}
-				cmd.Printf("%s %s\n", entry.Digest, entry.Name)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", entry.Digest, entry.Name); err != nil {
+					return err
+				}
 			}
 			return nil
 		},

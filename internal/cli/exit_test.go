@@ -88,6 +88,59 @@ func TestExitCodesRunnerFailures(t *testing.T) {
 	}
 }
 
+// TestVerbsWriteMachineOutputToStdout guards the cobra gotcha that cmd.Println
+// writes to stderr: a verb's machine-readable value must land on stdout so
+// `$(binrun -- resolve FILE)` and pre-warm scripts capture it, with stderr clean.
+func TestVerbsWriteMachineOutputToStdout(t *testing.T) {
+	home := t.TempDir()
+
+	t.Run("cache-dir", func(t *testing.T) {
+		stdout, stderr, code := runBinrunCapture(t, home, "--", "cache-dir")
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if want := filepath.Join(home, ".daemonkit") + "\n"; stdout != want {
+			t.Errorf("stdout = %q, want %q", stdout, want)
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+	})
+
+	t.Run("resolve", func(t *testing.T) {
+		descPath := seedReleaseDescriptor(t, home, []byte("#!/bin/sh\nexit 0\n"), "runme")
+		stdout, stderr, code := runBinrunCapture(t, home, "--", "resolve", descPath)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if !strings.HasSuffix(strings.TrimSpace(stdout), "/runme") {
+			t.Errorf("stdout = %q, want a path ending in /runme", stdout)
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+	})
+}
+
+func runBinrunCapture(t *testing.T, home string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.Command(binPath, args...)
+	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	var out, errBuf strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	if err == nil {
+		return out.String(), errBuf.String(), 0
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return out.String(), errBuf.String(), ee.ExitCode()
+	}
+	t.Fatalf("run binrun: %v", err)
+	return "", "", -1
+}
+
 func seedReleaseDescriptor(t *testing.T, home string, content []byte, entryPath string) string {
 	t.Helper()
 	sum := sha256.Sum256(content)

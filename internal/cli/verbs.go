@@ -56,8 +56,8 @@ func newResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(path)
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), path)
+			return err
 		},
 	}
 }
@@ -76,8 +76,8 @@ func newParseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(string(data))
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			return err
 		},
 	}
 }
@@ -96,8 +96,8 @@ func newLatestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(tag)
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), tag)
+			return err
 		},
 	}
 }
@@ -112,8 +112,8 @@ func newCacheDirCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(store.Root)
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), store.Root)
+			return err
 		},
 	}
 }
