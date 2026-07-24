@@ -195,6 +195,26 @@ func TestExecLeadingDashPath(t *testing.T) {
 			t.Errorf("err = %v, want a guidance error", err)
 		}
 	})
+
+	t.Run("non-ENOENT stat error surfaces the real cause", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "-notadir"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(dir)
+		// Stat traverses "-notadir" (a regular file) as a directory → ENOTDIR,
+		// which is not "does not exist" and must not be relabeled as routing.
+		err := execDescriptor(context.Background(), "-notadir/child", nil)
+		if err == nil {
+			t.Fatal("expected a stat error")
+		}
+		if strings.Contains(err.Error(), "is not a descriptor file") {
+			t.Errorf("misdiagnosed a non-ENOENT stat error as routing guidance: %v", err)
+		}
+		if !errors.Is(err, syscall.ENOTDIR) {
+			t.Errorf("err = %v, want the underlying ENOTDIR stat error", err)
+		}
+	})
 }
 
 func TestToPrune(t *testing.T) {

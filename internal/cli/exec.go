@@ -26,7 +26,12 @@ var execProcess = func(path string, argv, env []string) error {
 func execDescriptor(ctx context.Context, path string, args []string) error {
 	if strings.HasPrefix(path, "-") {
 		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("%q is not a descriptor file; run a binrun verb as 'binrun -- VERB'", path)
+			// A flag-shaped path that simply does not exist is a routing mistake;
+			// any other stat failure (EACCES, ENOTDIR, …) keeps its true cause.
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%q is not a descriptor file; run a binrun verb as 'binrun -- VERB'", path)
+			}
+			return err
 		}
 	}
 	desc, err := artifact.ParseFile(path)
