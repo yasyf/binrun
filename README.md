@@ -12,7 +12,7 @@ writing-docs skill's `references/readme.md` for the register and the skeleton.
 
 ```bash
 brew install yasyf/tap/binrun
-binrun hello
+binrun --version
 ```
 
 <details>
