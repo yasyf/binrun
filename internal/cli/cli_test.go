@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -30,8 +31,9 @@ func TestClassify(t *testing.T) {
 		{"descriptor with args", []string{"app.binrun", "a", "b"}, route{mode: modeExec, descriptor: "app.binrun", args: []string{"a", "b"}}},
 		{"shebang absolute path", []string{"/opt/app.binrun"}, route{mode: modeExec, descriptor: "/opt/app.binrun"}},
 		{"double dash selects verbs", []string{"--", "fetch", "f"}, route{mode: modeVerbs, args: []string{"fetch", "f"}}},
-		{"version flag falls to verbs", []string{"--version"}, route{mode: modeVerbs, args: []string{"--version"}}},
-		{"no args falls to verbs", nil, route{mode: modeVerbs}},
+		{"leading-dash path is a descriptor", []string{"-weird.binrun"}, route{mode: modeExec, descriptor: "-weird.binrun"}},
+		{"flag-shaped arg is a descriptor path", []string{"-v"}, route{mode: modeExec, descriptor: "-v"}},
+		{"no args is a usage error", nil, route{mode: modeUsage}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -126,6 +128,36 @@ func TestLatestTag(t *testing.T) {
 	}
 	if tag != "v9.9.9" {
 		t.Errorf("latestTag = %q, want v9.9.9", tag)
+	}
+}
+
+func TestExecRetriesOnPrunedEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	script := []byte("#!/bin/sh\nexit 0\n")
+	target := populateCache(t, home, script, "runme")
+	descPath := writeDescriptor(t, releaseDescriptorJSON(t, digestOf(script), int64(len(script)), "runme"))
+
+	orig := execProcess
+	t.Cleanup(func() { execProcess = orig })
+	var calls int
+	var lastPath string
+	execProcess = func(path string, _, _ []string) error {
+		calls++
+		lastPath = path
+		if calls == 1 {
+			return syscall.ENOENT // a concurrent gc pruned the entry between resolve and exec
+		}
+		return nil // the retry's re-resolve refetched it; second exec succeeds
+	}
+	if err := execDescriptor(context.Background(), descPath, nil); err != nil {
+		t.Fatalf("execDescriptor after ENOENT retry: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("execProcess called %d times, want 2 (initial + one retry)", calls)
+	}
+	if lastPath != target {
+		t.Errorf("retried exec path = %q, want %q", lastPath, target)
 	}
 }
 
@@ -258,7 +290,19 @@ func populateCache(t *testing.T, home string, content []byte, entryPath string) 
 	if err := os.WriteFile(target, content, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeCacheMeta(t, dir, "demo", "v1.0.0", digest)
 	return target
+}
+
+func writeCacheMeta(t *testing.T, dir, name, tag, digest string) {
+	t.Helper()
+	meta, err := json.Marshal(map[string]any{"name": name, "tag": tag, "digest": digest, "fetched_at": time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), meta, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func runVerb(t *testing.T, args ...string) string {

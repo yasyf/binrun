@@ -92,7 +92,8 @@ func newLatestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tag, err := latestTag(cmd.Context(), ghrelease.Client{Token: os.Getenv("GITHUB_TOKEN")}, desc)
+			client := ghrelease.Client{BaseURL: os.Getenv("GITHUB_API_URL"), Token: os.Getenv("GITHUB_TOKEN")}
+			tag, err := latestTag(cmd.Context(), client, desc)
 			if err != nil {
 				return err
 			}

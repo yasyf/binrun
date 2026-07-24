@@ -1,29 +1,38 @@
 // Package cli routes an invocation to either the transparent-exec path or the
 // verb tree, and maps runner-domain errors to a terse message.
 //
-// binrun has two shapes. "binrun FILE args…" (or a direct shebang invocation,
+// binrun has two shapes. "binrun FILE [args…]" (or a direct shebang invocation,
 // where the kernel passes the descriptor as the first argument) resolves the
 // descriptor and execs the pinned artifact, forwarding args untouched — cobra
 // never sees them, so an artifact's own flags are not interpreted. "binrun --
-// VERB …" runs a management verb (fetch, resolve, parse, latest, gc, cache-dir)
-// under the cobra tree. The "--" is the separator that selects the verb tree;
-// without it the first argument is always a descriptor path.
+// VERB …" runs a management verb (fetch, resolve, parse, latest, gc, cache-dir),
+// and binrun's own --version/--help, under the cobra tree.
+//
+// A leading "--" is the only thing that selects the verb tree; every other first
+// argument is a descriptor path, even one starting with "-" (dotslash's rule:
+// descriptors are invoked by real paths, so a flag-shaped first argument is a
+// path, not a binrun flag). Invoking binrun with no argument is a usage error,
+// so a wrapper that resolves an empty descriptor fails loud instead of silently
+// succeeding.
 package cli
 
 import (
 	"context"
-	"strings"
+	"errors"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yasyf/binrun/internal/version"
 )
 
+var errNoDescriptor = errors.New("no descriptor given; usage: binrun FILE [args…] (verbs: binrun -- VERB)")
+
 type mode int
 
 const (
 	modeExec mode = iota
 	modeVerbs
+	modeUsage
 )
 
 type route struct {
@@ -32,18 +41,17 @@ type route struct {
 	args       []string
 }
 
-// classify decides whether args select the transparent-exec path or the verb
-// tree. A leading "--" selects the verbs; any other leading non-flag token is a
-// descriptor path; a leading flag (or no args) falls through to the verb root so
-// "--version"/"--help" work.
+// classify decides how to dispatch args: a leading "--" selects the verb tree,
+// any other first argument is a descriptor path (even one starting with "-"),
+// and no arguments at all is a usage error.
 func classify(args []string) route {
 	switch {
-	case len(args) > 0 && args[0] == "--":
+	case len(args) == 0:
+		return route{mode: modeUsage}
+	case args[0] == "--":
 		return route{mode: modeVerbs, args: args[1:]}
-	case len(args) > 0 && !strings.HasPrefix(args[0], "-"):
-		return route{mode: modeExec, descriptor: args[0], args: args[1:]}
 	default:
-		return route{mode: modeVerbs, args: args}
+		return route{mode: modeExec, descriptor: args[0], args: args[1:]}
 	}
 }
 
@@ -53,8 +61,10 @@ func Run(ctx context.Context, args []string) error {
 	switch r := classify(args); r.mode {
 	case modeExec:
 		return execDescriptor(ctx, r.descriptor, r.args)
-	default:
+	case modeVerbs:
 		return runVerbs(ctx, r.args)
+	default:
+		return errNoDescriptor
 	}
 }
 

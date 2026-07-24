@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yasyf/daemonkit/artifact"
 )
@@ -41,6 +44,7 @@ func TestExitCodesArtifactPassthrough(t *testing.T) {
 		code int
 	}{
 		{"success passes through", 0},
+		{"exit 2 passes through (the artifact's own, the one legal 2)", 2},
 		{"failure passes through", 7},
 	}
 	for _, tt := range tests {
@@ -120,12 +124,81 @@ func TestVerbsWriteMachineOutputToStdout(t *testing.T) {
 			t.Errorf("stderr = %q, want empty", stderr)
 		}
 	})
+
+	t.Run("parse", func(t *testing.T) {
+		descPath := filepath.Join(t.TempDir(), "ph.binrun")
+		if err := os.WriteFile(descPath, []byte(`{"schema":1,"name":"capt-hook","kind":"python-tool","version":{"static":"0.1.0"},"tool":{"dist":"capt-hook"}}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runBinrunCapture(t, home, "--", "parse", descPath)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if !strings.Contains(stdout, `"kind": "python-tool"`) {
+			t.Errorf("stdout = %q, want normalized JSON", stdout)
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+	})
+
+	t.Run("gc", func(t *testing.T) {
+		gcHome := t.TempDir()
+		seedCacheMeta(t, gcHome, "demo", "v1", time.Now().Add(-2*time.Hour))
+		seedCacheMeta(t, gcHome, "demo", "v2", time.Now().Add(-1*time.Hour))
+		stdout, stderr, code := runBinrunCapture(t, gcHome, "--", "gc", "--keep", "1")
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if strings.TrimSpace(stdout) == "" {
+			t.Errorf("stdout empty, want a removed-entry line")
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+	})
+
+	t.Run("latest", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v9.9.9", "assets": []any{}})
+		}))
+		defer srv.Close()
+		descPath := seedReleaseDescriptor(t, home, []byte("#!/bin/sh\nexit 0\n"), "runme")
+		env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GITHUB_API_URL=" + srv.URL}
+		stdout, stderr, code := runBinrunEnvCapture(t, env, "--", "latest", descPath)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if strings.TrimSpace(stdout) != "v9.9.9" {
+			t.Errorf("stdout = %q, want v9.9.9", stdout)
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+	})
+}
+
+// TestNoDescriptorIsUsageError proves bare `binrun` (no descriptor) exits 1 with
+// guidance, so a wrapper resolving an empty descriptor fails loud, not silently.
+func TestNoDescriptorIsUsageError(t *testing.T) {
+	_, stderr, code := runBinrunCapture(t, t.TempDir())
+	if code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "no descriptor") {
+		t.Errorf("stderr = %q, want it to mention a missing descriptor", stderr)
+	}
 }
 
 func runBinrunCapture(t *testing.T, home string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
+	return runBinrunEnvCapture(t, []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, args...)
+}
+
+func runBinrunEnvCapture(t *testing.T, env []string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
 	cmd := exec.Command(binPath, args...)
-	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	cmd.Env = env
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -141,6 +214,26 @@ func runBinrunCapture(t *testing.T, home string, args ...string) (stdout, stderr
 	return "", "", -1
 }
 
+func seedCacheMeta(t *testing.T, home, name, tag string, fetchedAt time.Time) {
+	t.Helper()
+	sum := sha256.Sum256([]byte(name + "@" + tag))
+	digest := hex.EncodeToString(sum[:])
+	dir := filepath.Join(home, ".daemonkit", "cache", digest[:2], digest)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := json.Marshal(map[string]any{"name": name, "tag": tag, "digest": digest, "fetched_at": fetchedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), meta, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedReleaseDescriptor(t *testing.T, home string, content []byte, entryPath string) string {
 	t.Helper()
 	sum := sha256.Sum256(content)
@@ -150,6 +243,13 @@ func seedReleaseDescriptor(t *testing.T, home string, content []byte, entryPath 
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, entryPath), content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := json.Marshal(map[string]any{"name": "demo", "tag": "v1.0.0", "digest": digest, "fetched_at": time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), meta, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	platform, err := artifact.CurrentPlatform()
