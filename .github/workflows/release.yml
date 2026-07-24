@@ -11,3 +11,35 @@ jobs:
   release:
     uses: yasyf/homebrew-tap/.github/workflows/release-go.yml@v1
     secrets: inherit
+
+  # The scaffolded release job forwards to a reusable workflow that can't take
+  # extra steps, so the descriptor render + upload runs as a follow-on job. It
+  # gates on `release` (rather than a `release: published` trigger) because a
+  # release goreleaser creates with the default GITHUB_TOKEN does not fire
+  # `release` events for other workflows.
+  descriptor:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
+            --dir dist --pattern '*.tar.gz' --pattern 'checksums.txt'
+      - name: Render descriptor
+        run: scripts/render-descriptor.sh dist "${GITHUB_REF_NAME#v}" > binrun.binrun
+      - name: Validate descriptor
+        run: go run ./cmd/binrun -- parse binrun.binrun
+      - name: Upload descriptor to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" binrun.binrun --repo "${GITHUB_REPOSITORY}" --clobber
