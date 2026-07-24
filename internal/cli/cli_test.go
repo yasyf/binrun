@@ -101,7 +101,7 @@ func TestResolveVerbCacheHit(t *testing.T) {
 func TestCacheDirVerb(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	want := filepath.Join(home, ".daemonkit")
+	want := filepath.Join(home, ".daemonkit", "cache")
 	if out := strings.TrimSpace(runVerb(t, "cache-dir")); out != want {
 		t.Errorf("cache-dir = %q, want %q", out, want)
 	}

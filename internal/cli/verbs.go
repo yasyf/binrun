@@ -105,14 +105,14 @@ func newLatestCmd() *cobra.Command {
 func newCacheDirCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cache-dir",
-		Short: "Print the binrun store root",
+		Short: "Print the content cache directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			store, err := artifact.DefaultStore()
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), store.Root)
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), store.CacheDir())
 			return err
 		},
 	}

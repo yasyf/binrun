@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (print the local path), `parse` (print normalized descriptor JSON), `latest`
   (print the descriptor repo's latest release tag), `gc --keep N` (prune the
   content cache, keeping the newest N materializations per artifact name), and
-  `cache-dir` (print the store root).
+  `cache-dir` (print the content cache directory).
 - Exit discipline: every runner-domain failure exits 1 with a terse stderr
   message (artifact sentinels mapped to human strings; a `ManualUpgradeError`
   renders its `brew upgrade --cask` handoff). binrun never exits 2 — that code

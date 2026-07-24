@@ -99,7 +99,7 @@ func TestVerbsWriteMachineOutputToStdout(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
 		}
-		if want := filepath.Join(home, ".daemonkit") + "\n"; stdout != want {
+		if want := filepath.Join(home, ".daemonkit", "cache") + "\n"; stdout != want {
 			t.Errorf("stdout = %q, want %q", stdout, want)
 		}
 		if stderr != "" {
