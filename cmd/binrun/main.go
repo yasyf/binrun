@@ -18,10 +18,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := cli.NewRootCmd().ExecuteContext(ctx); err != nil {
-		// Minimal error handling: report on stderr and exit non-zero. As the CLI
-		// grows, map typed errors to exit codes here (see STYLEGUIDE.md § Error Handling).
-		fmt.Fprintln(os.Stderr, "binrun:", err)
+	// On the transparent-exec path a successful Resolve is followed by an exec
+	// that replaces this process, so Run only returns on a runner-domain error.
+	// Every such error maps to exit 1: exit 2 is reserved for real hook verdicts,
+	// and the only other codes come from the exec'd artifact itself.
+	if err := cli.Run(ctx, os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "binrun: "+cli.Message(err))
 		os.Exit(1)
 	}
 }

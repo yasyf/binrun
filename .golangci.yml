@@ -20,6 +20,12 @@ linters:
     - revive
     - staticcheck
     - unused
+  exclusions:
+    rules:
+      # Tests build and exec the binary and write executable fixtures on purpose.
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:
