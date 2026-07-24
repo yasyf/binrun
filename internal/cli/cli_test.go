@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yasyf/daemonkit/artifact"
 	"github.com/yasyf/daemonkit/ghrelease"
@@ -126,6 +127,85 @@ func TestLatestTag(t *testing.T) {
 	if tag != "v9.9.9" {
 		t.Errorf("latestTag = %q, want v9.9.9", tag)
 	}
+}
+
+func TestToPrune(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(name, digest string, hoursAgo int) artifact.CacheEntry {
+		return artifact.CacheEntry{Name: name, Digest: digest, FetchedAt: base.Add(-time.Duration(hoursAgo) * time.Hour)}
+	}
+	entries := []artifact.CacheEntry{
+		at("demo", "d-new", 1), at("demo", "d-mid", 2), at("demo", "d-old", 3),
+		at("other", "o-only", 1),
+		at("", "x-new", 1), at("", "x-old", 2), // damaged (no meta) share the empty-name group
+	}
+	tests := []struct {
+		name string
+		keep int
+		want []string // digests expected to be pruned
+	}{
+		{"keep 2 drops only groups over 2 (demo has 3)", 2, []string{"d-old"}},
+		{"keep 1 keeps only the newest per name", 1, []string{"d-mid", "d-old", "x-old"}},
+		{"keep 3 prunes nothing", 3, nil},
+		{"keep 0 prunes everything", 0, []string{"d-mid", "d-new", "d-old", "o-only", "x-new", "x-old"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := make([]string, 0)
+			for _, e := range toPrune(entries, tt.keep) {
+				got = append(got, e.Digest)
+			}
+			slices.Sort(got)
+			want := append([]string(nil), tt.want...)
+			slices.Sort(want)
+			if !slices.Equal(got, want) {
+				t.Errorf("toPrune(keep=%d) pruned %v, want %v", tt.keep, got, want)
+			}
+		})
+	}
+}
+
+func TestGCVerbKeepsNewestPerName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	base := time.Now()
+	demoOld := seedCacheEntry(t, home, "demo", "v1", base.Add(-3*time.Hour))
+	demoMid := seedCacheEntry(t, home, "demo", "v2", base.Add(-2*time.Hour))
+	demoNew := seedCacheEntry(t, home, "demo", "v3", base.Add(-1*time.Hour))
+	other := seedCacheEntry(t, home, "other", "v1", base)
+
+	runVerb(t, "gc", "--keep", "1")
+
+	for _, dir := range []string{demoOld, demoMid} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("expected %q pruned, stat err = %v", dir, err)
+		}
+	}
+	for _, dir := range []string{demoNew, other} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("expected %q kept, stat err = %v", dir, err)
+		}
+	}
+}
+
+func seedCacheEntry(t *testing.T, home, name, tag string, fetchedAt time.Time) string {
+	t.Helper()
+	digest := digestOf([]byte(name + "@" + tag))
+	dir := filepath.Join(home, ".daemonkit", "cache", digest[:2], digest)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := json.Marshal(map[string]any{"name": name, "tag": tag, "digest": digest, "fetched_at": fetchedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), meta, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func digestOf(b []byte) string {

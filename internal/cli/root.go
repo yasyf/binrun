@@ -79,6 +79,7 @@ func newVerbRoot() *cobra.Command {
 		newResolveCmd(),
 		newParseCmd(),
 		newLatestCmd(),
+		newGCCmd(),
 		newCacheDirCmd(),
 	)
 	return root
