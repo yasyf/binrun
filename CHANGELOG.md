@@ -4,7 +4,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-03
+
+### Changed
+- Repinned daemonkit to v0.21.0 (from v0.17.2). binrun uses only the portable
+  subset: `artifact`, `bundle`, `durable`, `ghrelease`, and `version`. No
+  command or flag changed.
+- The content cache directory now resolves your home directory from the passwd
+  database instead of `$HOME`, so a sandboxed or overridden `HOME` no longer
+  moves it. Set `DAEMONKIT_HOME` to put binrun's state somewhere else; daemonkit
+  logs a warning when you do.
+
+## [0.2.0] - 2026-07-24
 
 ### Added
 - Transparent exec: `binrun FILE [args…]` resolves a descriptor via the
@@ -26,4 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size/digest/asset-name from a goreleaser dist tree. A follow-on release job
   renders it and uploads it to each release.
 
-[Unreleased]: https://github.com/yasyf/binrun/commits/main
+[0.3.0]: https://github.com/yasyf/binrun/releases/tag/v0.3.0
+[0.2.0]: https://github.com/yasyf/binrun/releases/tag/v0.2.0

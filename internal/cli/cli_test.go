@@ -93,7 +93,7 @@ func TestParseVerbNormalizes(t *testing.T) {
 
 func TestResolveVerbCacheHit(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("DAEMONKIT_HOME", home)
 	script := []byte("#!/bin/sh\nexit 0\n")
 	target := populateCache(t, home, script, "runme")
 	descPath := writeDescriptor(t, releaseDescriptorJSON(t, digestOf(script), int64(len(script)), "runme"))
@@ -105,7 +105,7 @@ func TestResolveVerbCacheHit(t *testing.T) {
 
 func TestCacheDirVerb(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("DAEMONKIT_HOME", home)
 	want := filepath.Join(home, ".daemonkit", "cache")
 	if out := strings.TrimSpace(runVerb(t, "cache-dir")); out != want {
 		t.Errorf("cache-dir = %q, want %q", out, want)
@@ -136,7 +136,7 @@ func TestLatestTag(t *testing.T) {
 
 func TestExecRetriesOnPrunedEntry(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("DAEMONKIT_HOME", home)
 	script := []byte("#!/bin/sh\nexit 0\n")
 	target := populateCache(t, home, script, "runme")
 	descPath := writeDescriptor(t, releaseDescriptorJSON(t, digestOf(script), int64(len(script)), "runme"))
@@ -167,7 +167,7 @@ func TestExecRetriesOnPrunedEntry(t *testing.T) {
 func TestExecLeadingDashPath(t *testing.T) {
 	t.Run("existing leading-dash path execs", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		t.Setenv("DAEMONKIT_HOME", home)
 		script := []byte("#!/bin/sh\nexit 0\n")
 		populateCache(t, home, script, "runme")
 		dir := t.TempDir()
@@ -255,7 +255,7 @@ func TestToPrune(t *testing.T) {
 
 func TestGCVerbKeepsNewestPerName(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("DAEMONKIT_HOME", home)
 	base := time.Now()
 	demoOld := seedCacheEntry(t, home, "demo", "v1", base.Add(-3*time.Hour))
 	demoMid := seedCacheEntry(t, home, "demo", "v2", base.Add(-2*time.Hour))

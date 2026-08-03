@@ -164,7 +164,7 @@ func TestVerbsWriteMachineOutputToStdout(t *testing.T) {
 		}))
 		defer srv.Close()
 		descPath := seedReleaseDescriptor(t, home, []byte("#!/bin/sh\nexit 0\n"), "runme")
-		env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GITHUB_API_URL=" + srv.URL}
+		env := []string{"DAEMONKIT_HOME=" + home, "LOG_LEVEL=error", "PATH=" + os.Getenv("PATH"), "GITHUB_API_URL=" + srv.URL}
 		stdout, stderr, code := runBinrunEnvCapture(t, env, "--", "latest", descPath)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0 (stderr: %s)", code, stderr)
@@ -242,7 +242,7 @@ func TestLeadingDashAbsentPathExitsOne(t *testing.T) {
 
 func runBinrunCapture(t *testing.T, home string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
-	return runBinrunEnvCapture(t, []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, args...)
+	return runBinrunEnvCapture(t, []string{"DAEMONKIT_HOME=" + home, "LOG_LEVEL=error", "PATH=" + os.Getenv("PATH")}, args...)
 }
 
 func runBinrunEnvCapture(t *testing.T, env []string, args ...string) (stdout, stderr string, code int) {
@@ -336,7 +336,7 @@ func runBinrun(t *testing.T, home, descPath string) int {
 func runBinrunErr(t *testing.T, home, descPath string) (int, string) {
 	t.Helper()
 	cmd := exec.Command(binPath, descPath)
-	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	cmd.Env = []string{"DAEMONKIT_HOME=" + home, "LOG_LEVEL=error", "PATH=" + os.Getenv("PATH")}
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	err := cmd.Run()
