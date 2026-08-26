@@ -2,6 +2,8 @@ module github.com/yasyf/binrun
 
 go 1.26.5
 
+toolchain go1.26.6
+
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/yasyf/daemonkit v0.22.0
