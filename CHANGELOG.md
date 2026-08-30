@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-08-29
+
+### Changed
+- Repinned daemonkit to v0.23.0 (from v0.21.0). Every daemonkit package binrun
+  compiles against is unchanged between these versions, so no command, flag, or
+  on-disk path moved. The release republishes the descriptor and the Homebrew
+  cask against the current daemonkit.
+
 ## [0.3.0] - 2026-08-03
 
 ### Changed
@@ -37,5 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size/digest/asset-name from a goreleaser dist tree. A follow-on release job
   renders it and uploads it to each release.
 
+[0.3.1]: https://github.com/yasyf/binrun/releases/tag/v0.3.1
 [0.3.0]: https://github.com/yasyf/binrun/releases/tag/v0.3.0
 [0.2.0]: https://github.com/yasyf/binrun/releases/tag/v0.2.0
