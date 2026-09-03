@@ -110,7 +110,7 @@ A descriptor is `#!/usr/bin/env binrun` followed by JSON — executable, diffabl
 | `schema` | Descriptor schema version. A runner that doesn't know the schema exits 1 loudly instead of guessing. |
 | `name` | Artifact name; groups cache entries for `gc`. |
 | `kind` | `release-binary`, `python-tool`, or `signed-app` (see below). |
-| `version` | `{"static": "X.Y.Z"}` baked at render time, or `{"command": [...], "json_field": "..."}` resolved by asking a local host binary (see below). |
+| `version` | `{"static": "X.Y.Z"}` baked at render time, or a host-authoritative source read at resolve time: `{"file": "...", "plist_key": "..."}`, `{"file": "...", "json_field": "..."}`, or `{"command": [...], "json_field": "..."}` (see below). |
 | `platforms` | One entry per platform key (`macos-aarch64`, `macos-x86_64`, `linux-x86_64`, `linux-aarch64`): asset `size`, `hash`/`digest`, archive `format` (`raw`, `tar.gz`, `zip`), the `path` of the executable inside the archive, and `providers` to fetch from. |
 
 ### Kinds
@@ -121,9 +121,23 @@ A descriptor is `#!/usr/bin/env binrun` followed by JSON — executable, diffabl
 | `python-tool` | `uv tool install <dist>==<version>` into a per-version env under `~/.daemonkit/tools`; execs the env's real entrypoint | uv's registry hash checking; offline-deterministic after first run |
 | `signed-app` | Attests an installed signed app matches the pinned version; a mismatch prints the exact upgrade command | Code signature + version attestation |
 
-### Dynamic versions
+### Host-authoritative versions
 
-A `version.command` descriptor asks a locally installed binary what version to run — the pattern for a Python tool that must match a signed host app build-for-build. Dynamic versions are only valid for `python-tool` and `signed-app`, where an independent integrity gate (registry hashes, code signing) backs the artifact; a dynamic `release-binary` has no such gate and fails validation.
+A descriptor that must track a locally installed app build-for-build — a Python tool paired with a signed host binary, say — reads the version off the host at resolve time instead of baking it in. Two sources do that:
+
+```json
+"version": {"file": "~/Applications/Captain Hook.app/Contents/Info.plist", "plist_key": "CFBundleShortVersionString"}
+```
+
+`version.file` reads the string at `plist_key` from an XML or binary plist, or at `json_field` from a JSON document. The path is absolute or `~/`-relative, and `~` resolves through the passwd database rather than `HOME`, so a sandboxed environment cannot redirect it.
+
+```json
+"version": {"command": ["capt-hookd", "version"], "json_field": "build"}
+```
+
+`version.command` runs a binary and reads `json_field` out of its JSON stdout. Reach for it only when the host publishes its version nowhere on disk: every resolution pays a process spawn, which on a machine running endpoint-security software costs far more than the read it replaces.
+
+Both are only valid for `python-tool` and `signed-app`, where an independent integrity gate (registry hashes, code signing) backs the artifact; a `release-binary` resolved this way has no such gate and fails validation.
 
 ## CLI
 
@@ -135,7 +149,7 @@ A `version.command` descriptor asks a locally installed binary what version to r
 | `binrun -- resolve FILE` | Print the resolved local executable path |
 | `binrun -- parse FILE` | Print the normalized descriptor JSON |
 | `binrun -- latest FILE` | Print the newest release tag from the descriptor's provider |
-| `binrun -- gc [--keep N]` | Prune the cache to the newest N versions per artifact |
+| `binrun -- gc [--keep N]` | Prune the cache and the tool store to the newest N versions per artifact and per tool |
 | `binrun -- cache-dir` | Print the content cache directory |
 
 Exit codes: `0` on success; every binrun-domain failure exits `1` with a one-line message. When the artifact runs, its own exit code passes through untouched. binrun never exits `2` — in the ecosystem it serves, `2` is a hook's blocking verdict and belongs to the artifact alone.
