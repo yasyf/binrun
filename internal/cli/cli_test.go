@@ -240,7 +240,7 @@ func TestToPrune(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := make([]string, 0)
-			for _, e := range toPrune(entries, tt.keep) {
+			for _, e := range toPrune(entries, tt.keep, cacheName, cacheOrder) {
 				got = append(got, e.Digest)
 			}
 			slices.Sort(got)
@@ -252,6 +252,10 @@ func TestToPrune(t *testing.T) {
 		})
 	}
 }
+
+func cacheName(e artifact.CacheEntry) string { return e.Name }
+
+func cacheOrder(e artifact.CacheEntry) (time.Time, string) { return e.FetchedAt, e.Digest }
 
 func TestGCVerbKeepsNewestPerName(t *testing.T) {
 	home := t.TempDir()
@@ -372,4 +376,68 @@ func runVerb(t *testing.T, args ...string) string {
 		t.Fatalf("verb %q: %v", args, err)
 	}
 	return out.String()
+}
+
+func TestToPruneTools(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(dist, version string, hoursAgo int) artifact.ToolEntry {
+		return artifact.ToolEntry{Dist: dist, Version: version, InstalledAt: base.Add(-time.Duration(hoursAgo) * time.Hour)}
+	}
+	entries := []artifact.ToolEntry{
+		at("capt-hook", "12.22.5", 1), at("capt-hook", "12.22.0", 2), at("capt-hook", "12.21.3", 3),
+		at("other", "1.0.0", 1),
+	}
+	partial := artifact.ToolEntry{Dist: "capt-hook", Version: "12.20.0"} // no marker: zero InstalledAt
+	entries = append(entries, partial)
+
+	got := make([]string, 0)
+	for _, e := range toPrune(entries, 2, toolDist, toolOrder) {
+		got = append(got, e.Version)
+	}
+	slices.Sort(got)
+	want := []string{"12.20.0", "12.21.3"}
+	if !slices.Equal(got, want) {
+		t.Errorf("toPrune(keep=2) pruned %v, want %v", got, want)
+	}
+}
+
+func toolDist(e artifact.ToolEntry) string { return e.Dist }
+
+func toolOrder(e artifact.ToolEntry) (time.Time, string) { return e.InstalledAt, e.Version }
+
+func TestGCVerbPrunesToolStoreAlongsideCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	base := time.Now()
+	cached := seedCacheEntry(t, home, "demo", "v1", base)
+	old := seedToolEnv(t, home, "capt-hook", "12.21.3", base.Add(-3*time.Hour))
+	current := seedToolEnv(t, home, "capt-hook", "12.22.5", base)
+	lone := seedToolEnv(t, home, "other-tool", "1.0.0", base.Add(-9*time.Hour))
+
+	runVerb(t, "gc", "--keep", "1")
+
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("expected %q pruned, stat err = %v", old, err)
+	}
+	for _, dir := range []string{current, lone, cached} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("expected %q kept, stat err = %v", dir, err)
+		}
+	}
+}
+
+func seedToolEnv(t *testing.T, home, dist, version string, installedAt time.Time) string {
+	t.Helper()
+	dir := filepath.Join(home, ".daemonkit", "tools", dist, version)
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, ".installed")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(marker, installedAt, installedAt); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
