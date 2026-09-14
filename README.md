@@ -119,7 +119,7 @@ A descriptor is `#!/usr/bin/env binrun` followed by JSON — executable, diffabl
 | Kind | Backend | Integrity |
 |---|---|---|
 | `release-binary` | GitHub release asset unpacked into the content-addressed cache at `~/.daemonkit/cache/<aa>/<digest>/<path>` | Descriptor-pinned sha256 + size, verified before anything reaches the final path |
-| `python-tool` | `uv tool install <dist>==<version>` into a per-version env under `~/.daemonkit/tools`; execs the env's real entrypoint | uv's registry hash checking; offline-deterministic after first run |
+| `python-tool` | `uv tool install --refresh-package <dist> <dist>==<version>` into a per-version env under `~/.daemonkit/tools`; execs the env's real entrypoint | uv's registry hash checking; offline-deterministic after first run |
 | `signed-app` | Attests an installed signed app matches the pinned version; a mismatch prints the exact upgrade command | Code signature + version attestation |
 
 ### Host-authoritative versions
