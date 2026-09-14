@@ -63,6 +63,7 @@ func TestMessage(t *testing.T) {
 		{"unsafe archive", artifact.ErrUnsafeArchive, "unsafe archive entry"},
 		{"manual upgrade stale", &artifact.ManualUpgradeError{Name: "cap", Cask: "captain-hook", Want: "1.2.0", Got: "1.1.0"}, `signed app "cap" is version 1.1.0, want 1.2.0; run: brew upgrade --cask captain-hook`},
 		{"manual upgrade absent", &artifact.ManualUpgradeError{Name: "cap", Cask: "captain-hook"}, `signed app "cap" is not installed; run: brew upgrade --cask captain-hook`},
+		{"manual upgrade formula", &artifact.ManualUpgradeError{Name: "cap", Formula: "yasyf/tap/captain-hook", Want: "1.2.0", Got: "1.1.0"}, `signed app "cap" is version 1.1.0, want 1.2.0; run: brew upgrade yasyf/tap/captain-hook`},
 		{"plain passthrough", errors.New("boom"), "boom"},
 	}
 	for _, tt := range tests {
