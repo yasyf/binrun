@@ -387,12 +387,12 @@ func TestToPruneTools(t *testing.T) {
 	entries := []artifact.ToolEntry{
 		at("capt-hook", "12.22.5", 1), at("capt-hook", "12.22.0", 2), at("capt-hook", "12.21.3", 3),
 		at("other", "1.0.0", 1),
+		{Dist: "capt-hook", Version: "12.20.0"},
 	}
-	partial := artifact.ToolEntry{Dist: "capt-hook", Version: "12.20.0"} // no marker: zero InstalledAt
-	entries = append(entries, partial)
 
-	got := make([]string, 0)
-	for _, e := range toPrune(entries, 2, toolDist, toolOrder) {
+	pruned := toPrune(entries, 2, toolDist, toolOrder)
+	got := make([]string, 0, len(pruned))
+	for _, e := range pruned {
 		got = append(got, e.Version)
 	}
 	slices.Sort(got)
