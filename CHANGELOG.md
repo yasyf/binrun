@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-14
+
+### Fixed
+- A `python-tool` install refreshes uv's cached index entry for its dist.
+  Right after a release, uv resolved the pinned version against a cached
+  index that predated it and failed with "no version of <dist>==<version>".
+  capt-hook's hooks went down that way on 12.28.0 until uv was rerun by hand
+  with `--refresh-package`. Repinned daemonkit to v0.27.1 (from v0.27.0),
+  which passes that flag on every install; the rest of v0.27.1 is shutdown
+  handling binrun does not build against.
+
 ## [0.5.0] - 2026-09-14
 
 ### Added
