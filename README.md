@@ -111,7 +111,7 @@ A descriptor is `#!/usr/bin/env binrun` followed by JSON — executable, diffabl
 | `name` | Artifact name; groups cache entries for `gc`. |
 | `kind` | `release-binary`, `python-tool`, or `signed-app` (see below). |
 | `version` | `{"static": "X.Y.Z"}` baked at render time, or a host-authoritative source read at resolve time: `{"file": "...", "plist_key": "..."}`, `{"file": "...", "json_field": "..."}`, or `{"command": [...], "json_field": "..."}` (see below). |
-| `app` | `signed-app` only: the install `dir`, the bundle's `app_name`, an optional `exec` path inside it, and exactly one of `cask` or `formula`, the Homebrew package the upgrade command names (`brew upgrade --cask <cask>` or `brew upgrade <formula>`). |
+| `app` | `signed-app` only: the install `dir`, the bundle's `app_name`, an optional `exec` path inside it, exactly one of `cask` or `formula`, the Homebrew package the upgrade command names (`brew upgrade --cask <cask>` or `brew upgrade <formula>`), and an optional `min_version`: with a host-authoritative `version`, the oldest release triple the installed app may report. A dev build always satisfies it. |
 | `platforms` | One entry per platform key (`macos-aarch64`, `macos-x86_64`, `linux-x86_64`, `linux-aarch64`): asset `size`, `hash`/`digest`, archive `format` (`raw`, `tar.gz`, `zip`), the `path` of the executable inside the archive, and `providers` to fetch from. |
 
 ### Kinds

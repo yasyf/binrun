@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-14
+
+### Added
+- A `signed-app` descriptor with a host-authoritative version can set
+  `app.min_version`. An installed app older than that release fails with
+  `signed app "<name>" is version X, want at least Y; run: brew upgrade
+  <formula>` and exit 1; a dev build always passes. Validation refuses a
+  `min_version` that is not a release triple or that sits beside a static
+  version.
+
+### Changed
+- Repinned daemonkit to v0.28.0 (from v0.27.1). No command or flag changed.
+
 ## [0.5.1] - 2026-09-14
 
 ### Fixed
