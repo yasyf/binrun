@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-14
+
+### Added
+- A `signed-app` descriptor can name a Homebrew formula as its upgrade hint:
+  `app.formula` sits beside `app.cask`, and exactly one of the two must be set.
+  A missing or stale app then prints `brew upgrade <formula>` instead of
+  `brew upgrade --cask <cask>`, for apps that ship inside a formula, such as
+  Captain Hook.
+
+### Changed
+- Repinned daemonkit to v0.27.0 (from v0.24.0), which carries the formula hint
+  and also expands a `~/` in a signed app's `app.dir` through the passwd home.
+  No command or flag changed.
+
+## [0.4.0] - 2026-09-02
+
+### Changed
+- Repinned daemonkit to v0.24.0 (from v0.23.0), which adds the `version.file`
+  descriptor source. `gc` now prunes the `python-tool` store under the same
+  `--keep` it applies to the content cache.
+
 ## [0.3.1] - 2026-08-29
 
 ### Changed

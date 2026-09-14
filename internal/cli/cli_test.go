@@ -63,6 +63,7 @@ func TestMessage(t *testing.T) {
 		{"unsafe archive", artifact.ErrUnsafeArchive, "unsafe archive entry"},
 		{"manual upgrade stale", &artifact.ManualUpgradeError{Name: "cap", Cask: "captain-hook", Want: "1.2.0", Got: "1.1.0"}, `signed app "cap" is version 1.1.0, want 1.2.0; run: brew upgrade --cask captain-hook`},
 		{"manual upgrade absent", &artifact.ManualUpgradeError{Name: "cap", Cask: "captain-hook"}, `signed app "cap" is not installed; run: brew upgrade --cask captain-hook`},
+		{"manual upgrade formula", &artifact.ManualUpgradeError{Name: "cap", Formula: "yasyf/tap/captain-hook", Want: "1.2.0", Got: "1.1.0"}, `signed app "cap" is version 1.1.0, want 1.2.0; run: brew upgrade yasyf/tap/captain-hook`},
 		{"plain passthrough", errors.New("boom"), "boom"},
 	}
 	for _, tt := range tests {
@@ -386,12 +387,12 @@ func TestToPruneTools(t *testing.T) {
 	entries := []artifact.ToolEntry{
 		at("capt-hook", "12.22.5", 1), at("capt-hook", "12.22.0", 2), at("capt-hook", "12.21.3", 3),
 		at("other", "1.0.0", 1),
+		{Dist: "capt-hook", Version: "12.20.0"},
 	}
-	partial := artifact.ToolEntry{Dist: "capt-hook", Version: "12.20.0"} // no marker: zero InstalledAt
-	entries = append(entries, partial)
 
-	got := make([]string, 0)
-	for _, e := range toPrune(entries, 2, toolDist, toolOrder) {
+	pruned := toPrune(entries, 2, toolDist, toolOrder)
+	got := make([]string, 0, len(pruned))
+	for _, e := range pruned {
 		got = append(got, e.Version)
 	}
 	slices.Sort(got)
