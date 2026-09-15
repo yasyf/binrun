@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- binrun no longer stalls before `main` when its working directory has been
+  removed. Go's package `os` calls `getcwd` at init on macOS, and libc's fallback
+  scans the former parent entry by entry; a hook launched from a `$TMPDIR`
+  scratch directory removed while it was starting spent minutes there. A
+  `cwdguard` package that imports only `syscall`, so it initializes ahead of
+  `os`, moves a removed working directory to `/` and returns to it right before
+  the exec, so the artifact inherits the working directory and `$PWD` binrun was
+  given.
+
 ## [0.6.0] - 2026-09-14
 
 ### Added
