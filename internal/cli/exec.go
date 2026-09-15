@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/yasyf/binrun/internal/cwdguard"
 	"github.com/yasyf/daemonkit/artifact"
 )
 
@@ -61,5 +62,8 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 }
 
 func execAt(path string, args []string) error {
+	if err := cwdguard.Return(); err != nil {
+		return err
+	}
 	return execProcess(path, append([]string{path}, args...), os.Environ())
 }
