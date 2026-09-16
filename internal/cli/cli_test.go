@@ -105,6 +105,34 @@ func TestResolveVerbCacheHit(t *testing.T) {
 	}
 }
 
+func TestResolveVerbCopyExecLeavesTheAppBundle(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	apps := t.TempDir()
+	payload := []byte("#!/bin/sh\nexit 0\n")
+	entrypoint := writeSignedApp(t, apps, payload)
+
+	inBundle := strings.TrimSpace(runVerb(t, "resolve", writeDescriptor(t, signedAppDescriptorJSON(t, apps, false))))
+	if inBundle != entrypoint {
+		t.Fatalf("resolve without copy_exec = %q, want %q", inBundle, entrypoint)
+	}
+
+	copied := strings.TrimSpace(runVerb(t, "resolve", writeDescriptor(t, signedAppDescriptorJSON(t, apps, true))))
+	if bundle := filepath.Join(apps, signedAppName+".app") + string(os.PathSeparator); strings.HasPrefix(copied, bundle) {
+		t.Errorf("resolve with copy_exec = %q, want a path outside %q", copied, bundle)
+	}
+	if cache := filepath.Join(home, ".daemonkit", "cache") + string(os.PathSeparator); !strings.HasPrefix(copied, cache) {
+		t.Errorf("resolve with copy_exec = %q, want it under %q", copied, cache)
+	}
+	got, err := os.ReadFile(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("copy = %q, want %q", got, payload)
+	}
+}
+
 func TestCacheDirVerb(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("DAEMONKIT_HOME", home)
@@ -332,6 +360,51 @@ func releaseDescriptorJSON(t *testing.T, digest string, size int64, path string)
 				"size": size, "hash": "sha256", "digest": digest, "path": path,
 				"providers": []any{map[string]any{"type": "github-release", "repo": "yasyf/demo", "tag": "v1.0.0", "name": "demo.tar.gz"}},
 			},
+		},
+	}
+	data, err := json.Marshal(desc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+const (
+	signedAppName    = "Captain Hook"
+	signedAppVersion = "12.15.3"
+	signedAppExec    = "Contents/Helpers/capt-hookd"
+)
+
+func writeSignedApp(t *testing.T, dir string, payload []byte) string {
+	t.Helper()
+	appPath := filepath.Join(dir, signedAppName+".app")
+	entrypoint := filepath.Join(appPath, filepath.FromSlash(signedAppExec))
+	if err := os.MkdirAll(filepath.Dir(entrypoint), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entrypoint, payload, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plist := `<plist><dict><key>CFBundleShortVersionString</key><string>` + signedAppVersion + `</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(appPath, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return entrypoint
+}
+
+func signedAppDescriptorJSON(t *testing.T, dir string, copyExec bool) string {
+	t.Helper()
+	desc := map[string]any{
+		"schema":  1,
+		"name":    signedAppName,
+		"kind":    "signed-app",
+		"version": map[string]any{"static": signedAppVersion},
+		"app": map[string]any{
+			"dir":       dir,
+			"app_name":  signedAppName,
+			"exec":      signedAppExec,
+			"cask":      "captain-hook",
+			"copy_exec": copyExec,
 		},
 	}
 	data, err := json.Marshal(desc)
