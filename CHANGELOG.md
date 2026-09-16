@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-15
+
+### Changed
+- Repinned daemonkit to v0.31.0 (from v0.28.0). A `signed-app` descriptor can
+  now set `app.copy_exec`, and binrun passes it through untouched. `resolve`
+  and the transparent exec path then hand back a cached copy of the attested
+  entrypoint rather than the file inside the app bundle. A short-lived client
+  therefore never holds a live process on a bundle the next upgrade must
+  quiesce. daemonkit copies only that one file, so the entrypoint must carry
+  its own signature, and it keys the copy on the app's version and the
+  entrypoint's identity, which keeps a warm resolve down to a few stats that
+  read nothing. No command or flag changed.
+
 ## [0.6.1] - 2026-09-14
 
 ### Fixed
