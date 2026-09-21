@@ -82,7 +82,7 @@ Sweeping the whole store by hand is one command:
 binrun -- gc --keep 2
 ```
 
-It keeps the newest two cached versions of each artifact and removes the rest, under the same live-process guard; an environment it skips is named on stderr. Damaged cache entries (missing metadata) are always reclaimed.
+It keeps the newest two cached versions of each artifact and removes the rest, with the same live-process guard for cached binaries and tool environments; every entry it skips is named on stderr. Damaged cache entries (missing metadata) carry no timestamp, so they sort oldest and go first, under that same guard.
 
 ---
 

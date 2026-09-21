@@ -48,7 +48,18 @@ func pruneCache(cmd *cobra.Command, store artifact.Store, keep int) error {
 	}
 	group := func(e artifact.CacheEntry) string { return e.Name }
 	order := func(e artifact.CacheEntry) (time.Time, string) { return e.FetchedAt, e.Digest }
-	for _, entry := range toPrune(entries, keep, group, order) {
+	candidates := toPrune(entries, keep, group, order)
+	live, err := liveDirs(candidates, func(e artifact.CacheEntry) string { return e.Dir })
+	if err != nil {
+		return err
+	}
+	for _, entry := range candidates {
+		if live[entry.Dir] {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "in use, kept: %s %s\n", entry.Digest, entry.Name); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := store.RemoveCacheEntry(entry); err != nil {
 			return err
 		}
@@ -57,6 +68,14 @@ func pruneCache(cmd *cobra.Command, store artifact.Store, keep int) error {
 		}
 	}
 	return nil
+}
+
+func liveDirs[T any](candidates []T, dir func(T) string) (map[string]bool, error) {
+	dirs := make([]string, 0, len(candidates))
+	for _, entry := range candidates {
+		dirs = append(dirs, dir(entry))
+	}
+	return livedir.InUse(listProcesses, dirs)
 }
 
 func pruneTools(cmd *cobra.Command, store artifact.Store, keep int) error {
@@ -91,17 +110,13 @@ func pruneToolEnvs(store artifact.Store, entries []artifact.ToolEntry, keep int,
 	group := func(e artifact.ToolEntry) string { return e.Dist }
 	order := func(e artifact.ToolEntry) (time.Time, string) { return e.InstalledAt, e.Version }
 	candidates := toPrune(entries, keep, group, order)
-	dirs := make([]string, 0, len(candidates))
-	for _, entry := range candidates {
-		dirs = append(dirs, entry.Dir)
-	}
-	live, err := livedir.InUse(listProcesses, dirs)
+	live, err := liveDirs(candidates, func(e artifact.ToolEntry) string { return e.Dir })
 	if err != nil {
 		return toolPrune{}, err
 	}
-	for _, dir := range dirs {
-		if strings.HasPrefix(running, dir+string(os.PathSeparator)) {
-			live[dir] = true
+	for _, entry := range candidates {
+		if strings.HasPrefix(running, entry.Dir+string(os.PathSeparator)) {
+			live[entry.Dir] = true
 		}
 	}
 	// An install that finishes while the process table is being read re-marks

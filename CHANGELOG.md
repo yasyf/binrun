@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `binrun -- gc` now applies the tool store's live-process guard to cached
+  release binaries too. On this machine, `--keep 2` would have deleted 52 of
+  66 cache entries, including a running `ccx` and `codex-ask`: the fourth and
+  fifth newest entries under their names. Long-running MCP servers and
+  daemons can use older binaries for days. Removing their directories leaves
+  the processes alive but breaks later loads from those directories and
+  re-exec. `gc` now skips those entries and names them on stderr.
+
 ## [0.8.0] - 2026-09-20
 
 ### Added

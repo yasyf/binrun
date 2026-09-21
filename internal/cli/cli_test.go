@@ -296,6 +296,7 @@ func TestGCVerbKeepsNewestPerName(t *testing.T) {
 	demoMid := seedCacheEntry(t, home, "demo", "v2", base.Add(-2*time.Hour))
 	demoNew := seedCacheEntry(t, home, "demo", "v3", base.Add(-1*time.Hour))
 	other := seedCacheEntry(t, home, "other", "v1", base)
+	stubProcesses(t)
 
 	runVerb(t, "gc", "--keep", "1")
 
@@ -308,6 +309,77 @@ func TestGCVerbKeepsNewestPerName(t *testing.T) {
 		if _, err := os.Stat(dir); err != nil {
 			t.Errorf("expected %q kept, stat err = %v", dir, err)
 		}
+	}
+}
+
+func TestGCVerbKeepsACachedBinaryALiveProcessRunsOutOf(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	base := time.Now()
+	stale := seedCacheEntry(t, home, "ccx", "v1", base.Add(-4*time.Hour))
+	busy := seedCacheEntry(t, home, "ccx", "v2", base.Add(-3*time.Hour))
+	newer := seedCacheEntry(t, home, "ccx", "v3", base.Add(-2*time.Hour))
+	newest := seedCacheEntry(t, home, "ccx", "v4", base)
+	stubProcesses(t, livedir.Process{PID: 4242, Args: []string{filepath.Join(busy, "ccx"), "mcp", "serve"}})
+
+	stdout, stderr := runVerbStreams(t, "gc", "--keep", "1")
+
+	for _, dir := range []string{stale, newer} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("expected %q pruned, stat err = %v", dir, err)
+		}
+	}
+	for _, dir := range []string{busy, newest} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("expected %q kept, stat err = %v", dir, err)
+		}
+	}
+	if want := "in use, kept: " + filepath.Base(busy) + " ccx\n"; !strings.Contains(stderr, want) {
+		t.Errorf("gc stderr %q does not report the live entry as %q", stderr, want)
+	}
+	if strings.Contains(stdout, filepath.Base(busy)) {
+		t.Errorf("gc stdout %q lists the live entry among those it removed", stdout)
+	}
+}
+
+func TestGCVerbPrunesADamagedCacheEntryUnlessItIsLive(t *testing.T) {
+	// A damaged entry carries no name, so it shares the unnamed group and is
+	// only ever a candidate once keep drops below that group's size.
+	tests := []struct {
+		name string
+		live bool
+	}{
+		{"nothing running out of it", false},
+		{"a live process running out of it", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("DAEMONKIT_HOME", home)
+			intact := seedCacheEntry(t, home, "ccx", "v1", time.Now())
+			damaged := seedCacheEntry(t, home, "ccx", "v2", time.Now())
+			if err := os.Remove(filepath.Join(damaged, "meta.json")); err != nil {
+				t.Fatal(err)
+			}
+			var procs []livedir.Process
+			if tt.live {
+				procs = append(procs, livedir.Process{PID: 4242, Args: []string{filepath.Join(damaged, "ccx")}})
+			}
+			stubProcesses(t, procs...)
+
+			runVerb(t, "gc", "--keep", "0")
+
+			if _, err := os.Stat(intact); !os.IsNotExist(err) {
+				t.Errorf("expected the intact entry pruned, stat err = %v", err)
+			}
+			_, err := os.Stat(damaged)
+			if tt.live && err != nil {
+				t.Errorf("a live process did not protect the damaged entry: %v", err)
+			}
+			if !tt.live && !os.IsNotExist(err) {
+				t.Errorf("expected the damaged entry pruned, stat err = %v", err)
+			}
+		})
 	}
 }
 
@@ -443,15 +515,21 @@ func writeCacheMeta(t *testing.T, dir, name, tag, digest string) {
 
 func runVerb(t *testing.T, args ...string) string {
 	t.Helper()
-	var out bytes.Buffer
+	stdout, stderr := runVerbStreams(t, args...)
+	return stdout + stderr
+}
+
+func runVerbStreams(t *testing.T, args ...string) (string, string) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
 	root := newVerbRoot()
-	root.SetOut(&out)
-	root.SetErr(&out)
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		t.Fatalf("verb %q: %v", args, err)
 	}
-	return out.String()
+	return stdout.String(), stderr.String()
 }
 
 func TestToPruneTools(t *testing.T) {
