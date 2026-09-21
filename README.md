@@ -72,11 +72,17 @@ binrun's own release workflow renders its descriptor from goreleaser's output �
 
 ### Keep the cache bounded
 
+A python-tool environment is a few hundred megabytes, and a tool that ships twice a week piles up a version per release. binrun reclaims them on its own: whenever it installs a new environment for a tool — running a descriptor, or pre-warming one with `fetch` or `resolve` — it deletes that tool's older environments beyond the newest three and logs what it took back. Nothing to schedule, and no growth between runs: the store grows only at an install, and an install is where binrun trims it.
+
+An environment a process is still running out of is never deleted. A worker started from `.../tools/capt-hook/12.28.0/` keeps importing from that directory for as long as it lives, so binrun reads every process's argv — `KERN_PROCARGS2` on macOS, `/proc/<pid>/cmdline` on Linux — and skips any environment one of your own processes names. Reclaim never blocks a run. A reclaim that fails logs a warning, and the run execs the artifact it already resolved.
+
+Sweeping the whole store by hand is one command:
+
 ```bash
 binrun -- gc --keep 2
 ```
 
-keeps the newest two cached versions of each artifact and removes the rest. Damaged cache entries (missing metadata) are always reclaimed.
+It keeps the newest two cached versions of each artifact and removes the rest, under the same live-process guard; an environment it skips is named on stderr. Damaged cache entries (missing metadata) are always reclaimed.
 
 ---
 

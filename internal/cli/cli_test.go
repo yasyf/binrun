@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yasyf/binrun/internal/livedir"
 	"github.com/yasyf/daemonkit/artifact"
 	"github.com/yasyf/daemonkit/ghrelease"
 )
@@ -488,6 +489,7 @@ func TestGCVerbPrunesToolStoreAlongsideCache(t *testing.T) {
 	old := seedToolEnv(t, home, "capt-hook", "12.21.3", base.Add(-3*time.Hour))
 	current := seedToolEnv(t, home, "capt-hook", "12.22.5", base)
 	lone := seedToolEnv(t, home, "other-tool", "1.0.0", base.Add(-9*time.Hour))
+	stubProcesses(t)
 
 	runVerb(t, "gc", "--keep", "1")
 
@@ -499,6 +501,186 @@ func TestGCVerbPrunesToolStoreAlongsideCache(t *testing.T) {
 			t.Errorf("expected %q kept, stat err = %v", dir, err)
 		}
 	}
+}
+
+func TestGCVerbKeepsAToolEnvALiveProcessRunsOutOf(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	base := time.Now()
+	stale := seedToolEnv(t, home, "capt-hook", "12.21.3", base.Add(-3*time.Hour))
+	busy := seedToolEnv(t, home, "capt-hook", "12.28.0", base.Add(-2*time.Hour))
+	current := seedToolEnv(t, home, "capt-hook", "12.48.0", base)
+	stubProcesses(t, livedir.Process{PID: 4242, Args: []string{
+		"/opt/uv/python/cpython-3.13/bin/python3", "-m", filepath.Join(busy, "bin", "capt_hookd"),
+	}})
+
+	out := runVerb(t, "gc", "--keep", "1")
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("expected %q pruned, stat err = %v", stale, err)
+	}
+	for _, dir := range []string{busy, current} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("expected %q kept, stat err = %v", dir, err)
+		}
+	}
+	if want := "in use, kept: capt-hook 12.28.0\n"; !strings.Contains(out, want) {
+		t.Errorf("gc output %q does not report the live env as %q", out, want)
+	}
+}
+
+func TestReclaimAfterInstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	store, err := artifact.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	dirs := map[string]string{}
+	for i, version := range []string{"12.21.3", "12.28.0", "12.40.0", "12.42.0"} {
+		dirs[version] = seedToolEnv(t, home, "capt-hook", version, base.Add(time.Duration(i)*time.Hour))
+	}
+	other := seedToolEnv(t, home, "other-tool", "1.0.0", base.Add(-99*time.Hour))
+	stubProcesses(t, livedir.Process{PID: 4242, Args: []string{filepath.Join(dirs["12.21.3"], "bin", "python")}})
+
+	reclaim := snapshotToolStore(store, pythonToolDescriptor(t))
+	dirs["12.48.0"] = seedToolEnv(t, home, "capt-hook", "12.48.0", base.Add(9*time.Hour))
+	reclaim.run(store, filepath.Join(dirs["12.48.0"], "bin", "hook"))
+
+	// The newest three survive on age; 12.21.3 is past them but holds a live
+	// worker; 12.28.0 is the one nothing is running out of.
+	for _, version := range []string{"12.21.3", "12.40.0", "12.42.0", "12.48.0"} {
+		if _, err := os.Stat(dirs[version]); err != nil {
+			t.Errorf("expected %s kept, stat err = %v", version, err)
+		}
+	}
+	if _, err := os.Stat(dirs["12.28.0"]); !os.IsNotExist(err) {
+		t.Errorf("expected 12.28.0 reclaimed, stat err = %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("reclaim touched another dist: %v", err)
+	}
+}
+
+func TestReclaimSkipsAWarmResolve(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	store, err := artifact.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	versions := []string{"12.21.3", "12.28.0", "12.40.0", "12.42.0"}
+	dirs := make([]string, 0, len(versions))
+	for i, version := range versions {
+		dirs = append(dirs, seedToolEnv(t, home, "capt-hook", version, base.Add(time.Duration(i)*time.Hour)))
+	}
+	stubProcesses(t)
+
+	reclaim := snapshotToolStore(store, pythonToolDescriptor(t))
+	reclaim.run(store, filepath.Join(dirs[len(dirs)-1], "bin", "hook"))
+
+	for _, dir := range dirs {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("a resolve that installed nothing reclaimed %q: %v", dir, err)
+		}
+	}
+}
+
+func TestReclaimNeverPrunesTheEnvItJustResolved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	store, err := artifact.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	stubProcesses(t)
+
+	reclaim := snapshotToolStore(store, pythonToolDescriptor(t))
+	// A clock that ran backwards, or a concurrent install of a newer version,
+	// leaves the env this run resolved outside the newest toolRetention.
+	resolvedDir := seedToolEnv(t, home, "capt-hook", "12.48.0", base.Add(-9*time.Hour))
+	for i, version := range []string{"12.21.3", "12.28.0", "12.40.0"} {
+		seedToolEnv(t, home, "capt-hook", version, base.Add(time.Duration(i)*time.Hour))
+	}
+	reclaim.run(store, filepath.Join(resolvedDir, "bin", "hook"))
+
+	if _, err := os.Stat(resolvedDir); err != nil {
+		t.Errorf("reclaim deleted the env this run resolved: %v", err)
+	}
+}
+
+func TestPruneToolEnvsSkipsAnInstallThatFinishedUnderIt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	store, err := artifact.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	settled := seedToolEnv(t, home, "capt-hook", "12.48.0", base)
+	partial := seedToolEnv(t, home, "capt-hook", "12.49.0", base)
+	if err := os.Remove(filepath.Join(partial, ".installed")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.ToolEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubProcesses(t)
+	// The install the planned-from listing caught mid-flight completes before
+	// the removal runs.
+	if err := os.WriteFile(filepath.Join(partial, ".installed"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pruned, err := pruneToolEnvs(store, entries, 1, "")
+	if err != nil {
+		t.Fatalf("pruneToolEnvs() = %v", err)
+	}
+	if len(pruned.Removed) != 0 {
+		t.Errorf("pruneToolEnvs removed %v, want nothing", versionsOf(pruned.Removed))
+	}
+	for _, dir := range []string{settled, partial} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("expected %q kept, stat err = %v", dir, err)
+		}
+	}
+}
+
+func TestReclaimIgnoresNonToolDescriptors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DAEMONKIT_HOME", home)
+	store, err := artifact.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc, err := artifact.Parse([]byte(releaseDescriptorJSON(t, strings.Repeat("a", 64), 1, "demo")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshotToolStore(store, desc); got.dist != "" {
+		t.Errorf("snapshotToolStore(release-binary) = %+v, want the zero reclaim", got)
+	}
+}
+
+func pythonToolDescriptor(t *testing.T) *artifact.Descriptor {
+	t.Helper()
+	desc, err := artifact.Parse([]byte(
+		`{"schema":1,"name":"capt-hook","kind":"python-tool","version":{"static":"12.48.0"},"tool":{"dist":"capt-hook","entrypoint":"hook"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return desc
+}
+
+func stubProcesses(t *testing.T, procs ...livedir.Process) {
+	t.Helper()
+	orig := listProcesses
+	t.Cleanup(func() { listProcesses = orig })
+	listProcesses = func() ([]livedir.Process, error) { return procs, nil }
 }
 
 func seedToolEnv(t *testing.T, home, dist, version string, installedAt time.Time) string {
