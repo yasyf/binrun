@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- The tool store now bounds itself. Installing a new python-tool environment —
+  through the exec path, `fetch`, or `resolve` — deletes that tool's older
+  environments beyond the newest three, and logs the versions it reclaimed at
+  info level. A store left to `gc` alone was never swept, because nothing ran
+  `gc`: 49 versions of one tool held 14 GB here.
+- Both the automatic reclaim and `binrun -- gc` now refuse to delete an
+  environment a live process is running out of. A uv-installed worker execs the
+  interpreter uv manages outside the environment, so the environment appears
+  only in the process's argv — read through `KERN_PROCARGS2` on macOS and
+  `/proc/<pid>/cmdline` on Linux, both restricted to this user's processes.
+  Deleting such an environment breaks the imports the worker has not reached
+  yet. `gc` names every environment it skipped on stderr.
+
 ## [0.7.0] - 2026-09-15
 
 ### Changed

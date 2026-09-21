@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"strings"
 	"syscall"
@@ -43,7 +44,7 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 	if err != nil {
 		return err
 	}
-	resolved, err := store.Resolve(ctx, desc, resolveOptions()...)
+	resolved, err := resolveWithRetention(ctx, store, desc)
 	if err != nil {
 		return err
 	}
@@ -59,6 +60,89 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 		return err
 	}
 	return execAt(resolved, args)
+}
+
+// toolRetention is how many of a python tool's environments survive the install
+// of a new one. The installer owns retention because an install is the only
+// moment the tool store grows.
+const toolRetention = 3
+
+// resolveWithRetention materializes desc and, when that installed a python-tool
+// environment the store did not already hold, prunes the dist's older ones.
+func resolveWithRetention(ctx context.Context, store artifact.Store, desc *artifact.Descriptor) (string, error) {
+	reclaim := snapshotToolStore(store, desc)
+	resolved, err := store.Resolve(ctx, desc, resolveOptions()...)
+	if err != nil {
+		return "", err
+	}
+	reclaim.run(store, resolved)
+	return resolved, nil
+}
+
+// toolReclaim is the tool store as it stood before a resolve, so the reclaim
+// after it can tell a fresh install from a warm hit. Its zero value reclaims
+// nothing.
+type toolReclaim struct {
+	dist   string
+	before map[string]bool
+}
+
+func snapshotToolStore(store artifact.Store, desc *artifact.Descriptor) toolReclaim {
+	if desc.Kind != artifact.PythonTool {
+		return toolReclaim{}
+	}
+	entries, err := store.ToolEntries()
+	if err != nil {
+		slog.Warn("binrun: tool store unreadable, skipping reclaim", "error", err)
+		return toolReclaim{}
+	}
+	before := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		before[entry.Dir] = true
+	}
+	return toolReclaim{dist: desc.Tool.Dist, before: before}
+}
+
+// run prunes the dist's environments past toolRetention, but only once a
+// resolve has materialized one the snapshot did not hold. The caller already
+// holds resolved by then, so a failure here is logged and the caller proceeds.
+func (r toolReclaim) run(store artifact.Store, resolved string) {
+	if r.dist == "" {
+		return
+	}
+	entries, err := store.ToolEntries()
+	if err != nil {
+		slog.Warn("binrun: tool store unreadable, skipping reclaim", "dist", r.dist, "error", err)
+		return
+	}
+	siblings := make([]artifact.ToolEntry, 0, len(entries))
+	fresh := false
+	for _, entry := range entries {
+		if entry.Dist != r.dist {
+			continue
+		}
+		fresh = fresh || !r.before[entry.Dir]
+		siblings = append(siblings, entry)
+	}
+	if !fresh {
+		return
+	}
+	pruned, err := pruneToolEnvs(store, siblings, toolRetention, resolved)
+	if len(pruned.Removed) > 0 || len(pruned.Skipped) > 0 {
+		slog.Info("binrun: reclaimed tool environments", "dist", r.dist,
+			"removed", versionsOf(pruned.Removed), "kept_in_use", versionsOf(pruned.Skipped))
+	}
+	if err != nil {
+		slog.Warn("binrun: reclaim tool environments", "dist", r.dist, "error", err)
+	}
+}
+
+func versionsOf(entries []artifact.ToolEntry) []string {
+	versions := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		versions = append(versions, entry.Version)
+	}
+	return versions
 }
 
 func execAt(path string, args []string) error {

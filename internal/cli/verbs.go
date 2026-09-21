@@ -33,7 +33,8 @@ func newFetchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return store.Fetch(cmd.Context(), desc, resolveOptions()...)
+			_, err = resolveWithRetention(cmd.Context(), store, desc)
+			return err
 		},
 	}
 }
@@ -52,7 +53,7 @@ func newResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path, err := store.Resolve(cmd.Context(), desc, resolveOptions()...)
+			path, err := resolveWithRetention(cmd.Context(), store, desc)
 			if err != nil {
 				return err
 			}
