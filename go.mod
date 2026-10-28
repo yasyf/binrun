@@ -2,7 +2,7 @@ module github.com/yasyf/binrun
 
 go 1.26.5
 
-toolchain go1.26.6
+toolchain go1.26.10
 
 require (
 	github.com/spf13/cobra v1.10.2
