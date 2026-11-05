@@ -6,7 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/spf13/cobra v1.10.2
-	github.com/yasyf/daemonkit v0.31.0
+	github.com/yasyf/daemonkit v0.36.4-0.20261105093128-e7a8580c8c7c
 	golang.org/x/sys v0.47.0
 )
 

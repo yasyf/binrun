@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -12,11 +15,20 @@ import (
 	"github.com/yasyf/daemonkit/ghrelease"
 )
 
-func resolveOptions() []artifact.Option {
+var resolveOptions = func() []artifact.Option {
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		return []artifact.Option{artifact.WithGitHubToken(token)}
 	}
-	return nil
+	return []artifact.Option{artifact.WithGitHubTokenSource(ghAuthToken)}
+}
+
+func ghAuthToken(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "gh", "auth", "token").Output()
+	if err != nil {
+		slog.Debug("binrun: no gh token for the GitHub API route", "error", err)
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func newFetchCmd() *cobra.Command {

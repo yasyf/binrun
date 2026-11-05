@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -45,6 +46,9 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 		return err
 	}
 	resolved, err := resolveWithRetention(ctx, store, desc)
+	if errors.Is(err, artifact.ErrDownload) {
+		resolved, err = cachedFallback(store, desc, err)
+	}
 	if err != nil {
 		return err
 	}
@@ -60,6 +64,36 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 		return err
 	}
 	return execAt(resolved, args)
+}
+
+func cachedFallback(store artifact.Store, desc *artifact.Descriptor, cause error) (string, error) {
+	platform, err := artifact.CurrentPlatform()
+	if err != nil {
+		return "", err
+	}
+	entry := desc.Platforms[platform]
+	entries, err := store.CacheEntries()
+	if err != nil {
+		return "", errors.Join(cause, err)
+	}
+	var newest artifact.CacheEntry
+	path := ""
+	for _, cached := range entries {
+		candidate := filepath.Join(cached.Dir, entry.Path)
+		if cached.Name != desc.Name || cached.Source != "" || (path != "" && !cached.FetchedAt.After(newest.FetchedAt)) {
+			continue
+		}
+		if info, err := os.Stat(candidate); err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		newest, path = cached, candidate
+	}
+	if path == "" {
+		return "", cause
+	}
+	slog.Warn("binrun: could not download the pinned version, running a cached one",
+		"name", desc.Name, "want", entry.Providers[0].Tag, "running", newest.Tag, "error", Message(cause))
+	return path, nil
 }
 
 // toolRetention is how many of a python tool's environments survive the install
