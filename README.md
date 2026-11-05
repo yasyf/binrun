@@ -66,6 +66,18 @@ $ binrun -- resolve cc-review.binrun
 
 The cache is content-addressed by the verified digest, so a corrupted or truncated download can never occupy the final path, and a second `fetch` of the same digest is a no-op that works offline.
 
+### Keep running when GitHub's download host fails
+
+The first run of a new pinned version downloads it, so a 504 from GitHub's release download host on that run would otherwise take the tool down with it. binrun retries a 5xx, a 429, or a timeout three times with backoff, then fetches the same asset through the GitHub API, authenticated with `GITHUB_TOKEN` or, when that is unset, the token `gh auth token` prints. Either route's bytes are checked against the digest and size the descriptor pins.
+
+When both routes fail and the cache holds another version of the same tool, the exec path runs the most recently fetched one and logs one warning on stderr naming the version it wanted and the one it ran:
+
+```console
+time=… level=WARN msg="binrun: could not download the pinned version, running a cached one" name=cc-slack want=v0.7.2 running=v0.7.1 error="download failed: …"
+```
+
+The older version can reject a flag only the new one knows. That run then fails with the older tool's own error, right under the warning that explains it. A checksum or size mismatch never falls back; it stays fatal. `fetch` and `resolve` never fall back either, so a pre-warm reports the failure instead of hiding it.
+
 ### Ship a descriptor with every release
 
 binrun's own release workflow renders its descriptor from goreleaser's output — `scripts/render-descriptor.sh` fills the version, asset names, sizes, and sha256s from `dist/` plus `checksums.txt`, validates it with `binrun -- parse`, and uploads it as a release asset. Copy that job into any repo that releases binaries and its consumers get a descriptor per release for free.

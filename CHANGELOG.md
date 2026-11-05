@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-05
+
+### Added
+
+- A first run no longer dies on one bad answer from GitHub's release download
+  host. Through daemonkit 0.37.0, binrun retries a 5xx, a 429, or a timeout
+  with backoff, then fetches the asset through the GitHub API, authenticated
+  with `GITHUB_TOKEN` or, when that is unset, `gh auth token`, which runs only
+  once the download host has failed. Both routes are checked against the
+  pinned digest.
+- When every route fails, the exec path runs the most recently fetched cached
+  version of the same tool and logs one stderr warning naming the version it
+  wanted and the one it ran. A checksum or size mismatch never falls back, and
+  `fetch` and `resolve` still fail.
+
 ### Fixed
 
 - The Homebrew cask strips quarantine with a `postflight_steps` stanza instead of the Ruby `postflight` block Homebrew 7 deprecated, so `brew upgrade` no longer warns.
