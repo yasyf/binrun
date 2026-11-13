@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/yasyf/daemonkit/artifact"
 )
@@ -27,19 +28,58 @@ func TestExecRecordsWhereAStaticDescriptorResolved(t *testing.T) {
 	}
 }
 
-func TestRecordLaunchSkipsADynamicVersion(t *testing.T) {
-	store := artifact.Store{Root: t.TempDir()}
+func TestRecordLaunchSkipsDescriptorsThatCanResolveElsewhere(t *testing.T) {
 	descPath := writeDescriptor(t, "{}")
-	desc := &artifact.Descriptor{Version: artifact.VersionSource{Command: []string{"version"}}}
-	recordLaunch(store, descPath, desc, "/bin/true")
+	parsed, err := os.Stat(descPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		desc artifact.Descriptor
+	}{
+		{"dynamic version", artifact.Descriptor{Kind: artifact.ReleaseBinary, Version: artifact.VersionSource{Command: []string{"version"}}}},
+		{"signed app", artifact.Descriptor{Kind: artifact.SignedApp, Version: artifact.VersionSource{Static: "1.0.0"}}},
+		{"python tool", artifact.Descriptor{Kind: artifact.PythonTool, Version: artifact.VersionSource{Static: "1.0.0"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := artifact.Store{Root: t.TempDir()}
+			recordLaunch(store, descPath, parsed, &tt.desc, "/bin/true")
+			if _, err := os.Stat(launchRecordPath(store, descPath)); !os.IsNotExist(err) {
+				t.Fatalf("stat launch record = %v; want not exist", err)
+			}
+		})
+	}
+}
+
+func TestRecordLaunchSkipsADescriptorRewrittenWhileItResolved(t *testing.T) {
+	descPath := writeDescriptor(t, "{}")
+	parsed, err := os.Stat(descPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := parsed.ModTime().Add(time.Second)
+	if err := os.Chtimes(descPath, later, later); err != nil {
+		t.Fatal(err)
+	}
+	store := artifact.Store{Root: t.TempDir()}
+	desc := &artifact.Descriptor{Kind: artifact.ReleaseBinary, Version: artifact.VersionSource{Static: "1.0.0"}}
+	recordLaunch(store, descPath, parsed, desc, "/bin/true")
 	if _, err := os.Stat(launchRecordPath(store, descPath)); !os.IsNotExist(err) {
 		t.Fatalf("stat launch record = %v; want not exist", err)
 	}
 }
 
-func TestLaunchRecordNameSpellsSlashesAsPercent(t *testing.T) {
+func TestLaunchRecordNamesAreInjective(t *testing.T) {
 	store := artifact.Store{Root: "/h/.daemonkit"}
-	if got, want := launchRecordPath(store, "/p/bin/x.binrun"), "/h/.daemonkit/binrun/resolved/%p%bin%x.binrun"; got != want {
-		t.Fatalf("launchRecordPath = %q, want %q", got, want)
+	tests := []struct{ descriptor, want string }{
+		{"/p/a/b/x.binrun", "/h/.daemonkit/binrun/resolved/%2Fp%2Fa%2Fb%2Fx.binrun"},
+		{"/p/a%b/x.binrun", "/h/.daemonkit/binrun/resolved/%2Fp%2Fa%25b%2Fx.binrun"},
+	}
+	for _, tt := range tests {
+		if got := launchRecordPath(store, tt.descriptor); got != tt.want {
+			t.Errorf("launchRecordPath(%q) = %q, want %q", tt.descriptor, got, tt.want)
+		}
 	}
 }

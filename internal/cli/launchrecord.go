@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,24 +12,32 @@ import (
 	"github.com/yasyf/daemonkit/artifact"
 )
 
-// The rendered launcher derives this name with ${path//\//%}.
+var (
+	errDescriptorMoved = errors.New("descriptor changed while it resolved")
+	recordNameEscapes  = strings.NewReplacer("%", "%25", "/", "%2F")
+)
+
+// The rendered launcher derives this name with ${path//\%/%25} then ${path//\//%2F}.
 func launchRecordPath(store artifact.Store, descriptor string) string {
-	return filepath.Join(store.Root, "binrun", "resolved", strings.ReplaceAll(descriptor, "/", "%"))
+	return filepath.Join(store.Root, "binrun", "resolved", recordNameEscapes.Replace(descriptor))
 }
 
-func recordLaunch(store artifact.Store, descriptor string, desc *artifact.Descriptor, resolved string) {
-	if desc.Version.Dynamic() || !filepath.IsAbs(descriptor) {
+func recordLaunch(store artifact.Store, descriptor string, parsed fs.FileInfo, desc *artifact.Descriptor, resolved string) {
+	if desc.Kind != artifact.ReleaseBinary || desc.Version.Dynamic() || !filepath.IsAbs(descriptor) {
 		return
 	}
-	if err := writeLaunchRecord(launchRecordPath(store, descriptor), descriptor, resolved); err != nil {
+	if err := writeLaunchRecord(launchRecordPath(store, descriptor), descriptor, parsed, resolved); err != nil {
 		slog.Debug("binrun: write launch record", "descriptor", descriptor, "error", err)
 	}
 }
 
-func writeLaunchRecord(record, descriptor, resolved string) error {
+func writeLaunchRecord(record, descriptor string, parsed fs.FileInfo, resolved string) error {
 	described, err := os.Stat(descriptor)
 	if err != nil {
 		return err
+	}
+	if !os.SameFile(described, parsed) || !described.ModTime().Equal(parsed.ModTime()) || described.Size() != parsed.Size() {
+		return errDescriptorMoved
 	}
 	content := []byte(resolved + "\n")
 	// The launcher's -nt compares whole seconds, so a record from the descriptor's own second is rewritten.

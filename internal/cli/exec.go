@@ -37,6 +37,7 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 			return err
 		}
 	}
+	parsed, statErr := os.Stat(path)
 	desc, err := artifact.ParseFile(path)
 	if err != nil {
 		return err
@@ -47,8 +48,8 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 	}
 	resolved, err := resolveWithRetention(ctx, store, desc)
 	switch {
-	case err == nil:
-		recordLaunch(store, path, desc, resolved)
+	case err == nil && statErr == nil:
+		recordLaunch(store, path, parsed, desc, resolved)
 	case errors.Is(err, artifact.ErrDownload):
 		resolved, err = cachedFallback(store, desc, err)
 	}
