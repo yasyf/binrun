@@ -46,7 +46,10 @@ func execDescriptor(ctx context.Context, path string, args []string) error {
 		return err
 	}
 	resolved, err := resolveWithRetention(ctx, store, desc)
-	if errors.Is(err, artifact.ErrDownload) {
+	switch {
+	case err == nil:
+		recordLaunch(store, path, desc, resolved)
+	case errors.Is(err, artifact.ErrDownload):
 		resolved, err = cachedFallback(store, desc, err)
 	}
 	if err != nil {
