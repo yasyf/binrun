@@ -32,20 +32,20 @@ func writeLaunchRecord(record, descriptor, resolved string) error {
 	content := []byte(resolved + "\n")
 	// The launcher's -nt compares whole seconds, so a record from the descriptor's own second is rewritten.
 	if info, err := os.Stat(record); err == nil && info.ModTime().Unix() > described.ModTime().Unix() {
-		if current, err := os.ReadFile(record); err == nil && bytes.Equal(current, content) {
+		if current, err := os.ReadFile(filepath.Clean(record)); err == nil && bytes.Equal(current, content) {
 			return nil
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(record), 0o750); err != nil {
 		return err
 	}
 	stage, err := os.CreateTemp(filepath.Dir(record), ".record-")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(stage.Name())
+	defer func() { _ = os.Remove(stage.Name()) }()
 	if _, err := stage.Write(content); err != nil {
-		stage.Close()
+		_ = stage.Close()
 		return err
 	}
 	if err := stage.Close(); err != nil {
